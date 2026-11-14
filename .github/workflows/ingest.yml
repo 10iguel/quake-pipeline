@@ -2,9 +2,13 @@ name: Hourly earthquake ingest
 
 on:
   schedule:
-    # Every hour at minute 17 (UTC). Not at :00 on purpose: the top of the hour
-    # is when everyone's jobs run, so GitHub delays those the most.
-    - cron: "17 * * * *"
+    # Three attempts per hour, at :07, :27 and :47 (UTC).
+    # Why not just once an hour: GitHub does not guarantee scheduled runs and
+    # silently skips them when it is busy. With a single hourly slot, only 1 of
+    # the first 11 scheduled runs actually started. Extra runs are harmless
+    # because the ingest is idempotent (upsert on the quake id).
+    # Never at :00, the busiest and most-delayed minute.
+    - cron: "7,27,47 * * * *"
   # Adds a manual "Run workflow" button in the Actions tab, for testing.
   workflow_dispatch:
 
