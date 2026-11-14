@@ -1,0 +1,218 @@
+{
+  "uid": "quake-pipeline",
+  "title": "Quake Pipeline",
+  "tags": ["quakes"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Earthquakes in the database",
+      "description": "Seed (1900 to now) plus everything the hourly job has added.",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+          "editorMode": "code",
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS total FROM quakes.earthquakes"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Time since last live run",
+      "description": "Should stay under about 75. Green = the hourly job is alive.",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 90 },
+              { "color": "red", "value": 180 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+          "editorMode": "code",
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT date_diff('minute', max(run_at), now()) AS minutes\nFROM quakes.ingest_runs\nWHERE source = 'live' AND status = 'ok'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Live meets history: M2.5+ quakes, last 24h vs 10-year daily average",
+      "description": "Filtered to M2.5+ because tiny quakes are recorded far more often now than decades ago, so all-magnitude averages aren't comparable.",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "purple" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "last_24h" },
+            "properties": [ { "id": "displayName", "value": "Last 24 hours" } ] },
+          { "matcher": { "id": "byName", "options": "avg_per_day_10yr" },
+            "properties": [ { "id": "displayName", "value": "10-year average per day" } ] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+          "editorMode": "code",
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "WITH daily AS (\n    SELECT CAST(event_time AS DATE) AS day, count(*) AS n\n    FROM quakes.earthquakes\n    WHERE mag >= 2.5\n      AND event_time >= now() - INTERVAL 10 YEAR\n      AND event_time <  current_date\n    GROUP BY 1\n)\nSELECT\n    (SELECT count(*) FROM quakes.earthquakes\n      WHERE mag >= 2.5 AND event_time >= now() - INTERVAL 1 DAY) AS last_24h,\n    (SELECT round(avg(n), 1) FROM daily)                          AS avg_per_day_10yr"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Liveness: new earthquakes loaded per hour by the live job",
+      "description": "Each bar is the number of quakes the hourly GitHub Actions job saw for the first time in that hour (first_ingested_at). Bars keep appearing = the stream is alive.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 1, "barAlignment": 1 },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+          "editorMode": "code",
+          "format": 0,
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', first_ingested_at) AS time, count(*) AS new_quakes\nFROM quakes.earthquakes\nWHERE source = 'live'\nGROUP BY 1\nORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Run log: every run, including zero-new-row runs and errors",
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 14 },
+      "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "mappings", "value": [
+                { "type": "value", "options": {
+                  "ok": { "color": "green", "index": 0 },
+                  "error": { "color": "red", "index": 1 }
+                } }
+              ] }
+            ]
+          }
+        ]
+      },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+          "editorMode": "code",
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT run_at, source, rows_fetched, rows_new, rows_total, status, message\nFROM quakes.ingest_runs\nORDER BY run_at DESC\nLIMIT 200"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "geomap",
+      "title": "Earthquakes in the last 24 hours (size = magnitude)",
+      "gridPos": { "h": 10, "w": 10, "x": 14, "y": 14 },
+      "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "view": { "id": "zero", "lat": 20, "lon": -100, "zoom": 1.6 },
+        "basemap": { "type": "default", "name": "Basemap" },
+        "controls": { "showZoom": true, "mouseWheelZoom": false, "showAttribution": true },
+        "tooltip": { "mode": "details" },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Quakes",
+            "location": { "mode": "coords", "latitude": "latitude", "longitude": "longitude" },
+            "config": {
+              "showLegend": false,
+              "style": {
+                "color": { "fixed": "red" },
+                "opacity": 0.5,
+                "size": { "field": "mag", "min": 2, "max": 14, "fixed": 4 },
+                "symbol": { "mode": "fixed", "fixed": "img/icons/marker/circle.svg" }
+              }
+            }
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "motherduck-duckdb-datasource", "uid": "motherduck" },
+          "editorMode": "code",
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT latitude, longitude, mag, place, event_time\nFROM quakes.earthquakes\nWHERE event_time >= now() - INTERVAL 1 DAY\n  AND latitude IS NOT NULL AND longitude IS NOT NULL"
+        }
+      ]
+    }
+  ]
+}

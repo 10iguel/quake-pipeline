@@ -1,0 +1,14 @@
+apiVersion: 1
+datasources:
+  - name: MotherDuck
+    uid: motherduck
+    type: motherduck-duckdb-datasource
+    access: proxy
+    isDefault: true
+    editable: true
+    jsonData:
+      database: ""                                   # leave blank for MotherDuck
+      initSql: "ATTACH IF NOT EXISTS 'md:quakes'"    # runs when the datasource connects
+    secureJsonData:
+      # Read from the container's environment at runtime. No secret in this file.
+      token: $__env{motherduck_token}

@@ -5,3 +5,4 @@ data/
 *.part
 .idea/
 __pycache__/
+grafana/plugins/

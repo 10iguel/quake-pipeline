@@ -1,0 +1,41 @@
+# Local Grafana for the demo. The data lives in MotherDuck; this only reads it.
+#
+# Start (from the project root):
+#     source .env
+#     docker compose -f grafana/docker-compose.yml up -d
+# Open:  http://localhost:3000
+# Stop:  docker compose -f grafana/docker-compose.yml down
+
+services:
+  grafana:
+    # The "-ubuntu" image matters: the DuckDB plugin needs glibc, which the
+    # default Alpine-based Grafana image does not have.
+    image: grafana/grafana:latest-ubuntu
+    container_name: quake-grafana
+    ports:
+      # 127.0.0.1 = only reachable from this laptop, not from the network.
+      - "127.0.0.1:3000:3000"
+    environment:
+      # The MotherDuck plugin is not signed by Grafana, so it must be allowed by name.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: motherduck-duckdb-datasource
+      # The token comes from the shell (`source .env`) and is never written to a file here.
+      # The datasource reads it as $__env{motherduck_token}.
+      motherduck_token: ${MOTHERDUCK_TOKEN:?Run 'source .env' first}
+      # DuckDB needs a writable home folder to store its MotherDuck extension.
+      # Grafana hides the container's environment (HOME, GF_PATHS_DATA) from
+      # plugins unless told to forward it; without this every query fails with
+      # "Can't find the home directory".
+      GF_PLUGINS_FORWARD_HOST_ENV_VARS: motherduck-duckdb-datasource
+      HOME: /usr/share/grafana
+      # No login screen: fine because the port is local-only (see above).
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/json/quakes.json
+    tmpfs:
+      # The MotherDuck extension also writes to the grafana user's own home
+      # folder, which is read-only in this image. Give it a small in-memory one.
+      # "exec" is required: the extension is a library that has to be loaded from here.
+      - /usr/share/grafana/.duckdb:uid=472,gid=0,mode=0700,exec
+    volumes:
+      - ./plugins:/var/lib/grafana/plugins            # downloaded plugin (gitignored)
+      - ./provisioning:/etc/grafana/provisioning:ro   # datasource + dashboard, loaded on boot
