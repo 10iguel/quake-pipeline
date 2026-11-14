@@ -1,0 +1,42 @@
+name: Hourly earthquake ingest
+
+on:
+  schedule:
+    # Every hour at minute 17 (UTC). Not at :00 on purpose: the top of the hour
+    # is when everyone's jobs run, so GitHub delays those the most.
+    - cron: "17 * * * *"
+  # Adds a manual "Run workflow" button in the Actions tab, for testing.
+  workflow_dispatch:
+
+# Never run two ingests at once. If a run is still going when the next one
+# is due, the new one waits instead of overlapping.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+# This job only reads the repo; it never needs to write to it.
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10   # a normal run takes about a minute; kill anything stuck
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip          # reuse downloaded packages between runs
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest the past-day feed into MotherDuck
+        env:
+          # Comes from the repo's Actions secrets. Never written in this file.
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: python ingest/ingest.py

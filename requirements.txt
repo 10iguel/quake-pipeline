@@ -1,0 +1,4 @@
+# Pinned on purpose: MotherDuck only accepts DuckDB versions inside its supported
+# range (1.4.x - 1.5.6 when this was written; duckdb 2.0.0 is too new).
+# Check https://motherduck.com/docs/duckdb-versions.json before bumping.
+duckdb==1.5.6
